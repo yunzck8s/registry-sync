@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -157,9 +158,15 @@ func main() {
 	}
 
 	// Serve static files (for frontend)
-	router.Static("/static", "./web/build/static")
-	router.StaticFile("/", "./web/build/index.html")
+	router.Static("/assets", "./web/build/assets")
+
+	// Serve index.html for all non-API routes (SPA fallback)
 	router.NoRoute(func(c *gin.Context) {
+		// Don't serve index.html for API requests
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			c.JSON(404, gin.H{"error": "Not found"})
+			return
+		}
 		c.File("./web/build/index.html")
 	})
 

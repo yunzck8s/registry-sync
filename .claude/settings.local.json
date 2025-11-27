@@ -24,7 +24,10 @@
       "Bash(sudo chown:*)",
       "Bash(sudo -S chown:*)",
       "Bash(sudo -S docker rm:*)",
-      "Bash(sudo -S docker stop:*)"
+      "Bash(sudo -S docker stop:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
