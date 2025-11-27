@@ -27,7 +27,10 @@
       "Bash(sudo -S docker stop:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npm run build:*)",
+      "Bash(cat:*)",
+      "Bash(git tag:*)"
     ],
     "deny": [],
     "ask": []
