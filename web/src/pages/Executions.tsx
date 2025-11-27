@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Table, Tag, Button, Modal, Timeline, Typography, Card, Input, Select, Space, DatePicker } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, EyeOutlined, SearchOutlined, FilterOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import { useApi } from '../hooks/useApi';
 import { executionApi, taskApi } from '../api/client';
 import type { Execution, ExecutionLog } from '../types';

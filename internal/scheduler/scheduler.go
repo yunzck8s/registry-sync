@@ -412,8 +412,22 @@ func (s *Scheduler) runTask(ctx context.Context, task *models.SyncTask, executio
 				continue
 			}
 
-			blobs := manifest.GetAllBlobs()
-			totalBlobsCount += len(blobs)
+			// Count blobs including multi-arch manifests
+			blobCount := 0
+			if manifest.IsManifestList() {
+				// For manifest list, count sub-manifests + their blobs
+				blobCount += len(manifest.Manifests) // Sub-manifests themselves are blobs
+				for range manifest.Manifests {
+					// We'll fetch sub-manifests during sync to count their blobs
+					// For now, estimate based on typical image (config + layers)
+					blobCount += 10 // Rough estimate per architecture
+				}
+			} else {
+				blobs := manifest.GetAllBlobs()
+				blobCount = len(blobs)
+			}
+
+			totalBlobsCount += blobCount
 
 			allRepoTags = append(allRepoTags, repoTagInfo{
 				repoName:   repoName,
@@ -457,58 +471,187 @@ func (s *Scheduler) runTask(ctx context.Context, task *models.SyncTask, executio
 			Timestamp:   time.Now(),
 		})
 
-		// Get all blobs from the pre-fetched manifest
-		blobs := repoTag.manifest.GetAllBlobs()
+		// Track failed blobs for this tag
+		tagFailedBlobs := 0
 
-		s.store.CreateExecutionLog(&models.ExecutionLog{
-			ExecutionID: execution.ID,
-			Level:       models.LogLevelInfo,
-			Message:     fmt.Sprintf("tag %s 有 %d 个 blob", repoTag.tag, len(blobs)),
-			Timestamp:   time.Now(),
-		})
+		// Handle multi-arch manifest list
+		if repoTag.manifest.IsManifestList() {
+			s.store.CreateExecutionLog(&models.ExecutionLog{
+				ExecutionID: execution.ID,
+				Level:       models.LogLevelInfo,
+				Message:     fmt.Sprintf("检测到多架构镜像 (manifest list)，包含 %d 个平台", len(repoTag.manifest.Manifests)),
+				Timestamp:   time.Now(),
+			})
 
-		// Sync blobs
-		for _, blob := range blobs {
-			// Check if exists
-			exists, _, err := targetClient.BlobExists(ctx, repoTag.targetRepo, blob.Digest)
-			if err != nil {
+			// Sync each sub-manifest and its blobs
+			for _, subManifestEntry := range repoTag.manifest.Manifests {
+				platform := fmt.Sprintf("%s/%s", subManifestEntry.Platform.OS, subManifestEntry.Platform.Architecture)
 				s.store.CreateExecutionLog(&models.ExecutionLog{
 					ExecutionID: execution.ID,
-					Level:       models.LogLevelError,
-					Message:     fmt.Sprintf("检查 blob 失败: %v", err),
+					Level:       models.LogLevelInfo,
+					Message:     fmt.Sprintf("同步平台 %s 的 manifest", platform),
 					Timestamp:   time.Now(),
 				})
-				execution.FailedBlobs++
-				continue
-			}
 
-			if exists {
-				execution.SkippedBlobs++
-				execution.SyncedBlobs++
-			} else {
-				// Copy blob
-				err = registry.CopyBlob(ctx, sourceClient, targetClient, repoTag.sourceRepo, repoTag.targetRepo, blob.Digest, blob.Size)
+				// Fetch the sub-manifest to get its blobs
+				subManifest, err := sourceClient.GetManifest(ctx, repoTag.sourceRepo, subManifestEntry.Digest)
 				if err != nil {
 					s.store.CreateExecutionLog(&models.ExecutionLog{
 						ExecutionID: execution.ID,
 						Level:       models.LogLevelError,
-						Message:     fmt.Sprintf("复制 blob 失败 (%s): %v", blob.Digest[:12], err),
+						Message:     fmt.Sprintf("获取子 manifest 失败 (%s): %v", platform, err),
 						Timestamp:   time.Now(),
 					})
 					execution.FailedBlobs++
+					tagFailedBlobs++
+					continue
+				}
+
+				// Sync blobs from sub-manifest (config + layers)
+				subBlobs := subManifest.GetAllBlobs()
+				subPlatformFailed := 0
+
+				for _, blob := range subBlobs {
+					exists, _, err := targetClient.BlobExists(ctx, repoTag.targetRepo, blob.Digest)
+					if err != nil {
+						s.store.CreateExecutionLog(&models.ExecutionLog{
+							ExecutionID: execution.ID,
+							Level:       models.LogLevelError,
+							Message:     fmt.Sprintf("检查 blob 失败 (%s, %s): %v", platform, blob.Digest[:12], err),
+							Timestamp:   time.Now(),
+						})
+						execution.FailedBlobs++
+						tagFailedBlobs++
+						subPlatformFailed++
+						continue
+					}
+
+					if exists {
+						execution.SkippedBlobs++
+						execution.SyncedBlobs++
+					} else {
+						err = registry.CopyBlob(ctx, sourceClient, targetClient, repoTag.sourceRepo, repoTag.targetRepo, blob.Digest, blob.Size)
+						if err != nil {
+							s.store.CreateExecutionLog(&models.ExecutionLog{
+								ExecutionID: execution.ID,
+								Level:       models.LogLevelError,
+								Message:     fmt.Sprintf("复制 blob 失败 (%s, %s): %v", platform, blob.Digest[:12], err),
+								Timestamp:   time.Now(),
+							})
+							execution.FailedBlobs++
+							tagFailedBlobs++
+							subPlatformFailed++
+						} else {
+							execution.SyncedBlobs++
+							execution.SyncedSize += blob.Size
+						}
+					}
+					s.store.UpdateExecution(execution)
+
+					// Broadcast progress
+					s.hub.BroadcastProgress(execution.ID, map[string]interface{}{
+						"total_blobs":  execution.TotalBlobs,
+						"synced_blobs": execution.SyncedBlobs,
+						"progress":     execution.Progress(),
+					})
+				}
+
+				// Only upload sub-manifest if all its blobs succeeded
+				if subPlatformFailed == 0 {
+					// Upload sub-manifest to target (use digest as reference)
+					_, err = targetClient.PutManifest(ctx, repoTag.targetRepo, subManifestEntry.Digest, subManifest)
+					if err != nil {
+						s.store.CreateExecutionLog(&models.ExecutionLog{
+							ExecutionID: execution.ID,
+							Level:       models.LogLevelError,
+							Message:     fmt.Sprintf("上传子 manifest 失败 (%s): %v", platform, err),
+							Timestamp:   time.Now(),
+						})
+						tagFailedBlobs++
+					} else {
+						s.store.CreateExecutionLog(&models.ExecutionLog{
+							ExecutionID: execution.ID,
+							Level:       models.LogLevelInfo,
+							Message:     fmt.Sprintf("平台 %s manifest 同步完成", platform),
+							Timestamp:   time.Now(),
+						})
+					}
 				} else {
-					execution.SyncedBlobs++
-					execution.SyncedSize += blob.Size
+					s.store.CreateExecutionLog(&models.ExecutionLog{
+						ExecutionID: execution.ID,
+						Level:       models.LogLevelError,
+						Message:     fmt.Sprintf("平台 %s 有 %d 个 blob 失败，跳过子 manifest 上传", platform, subPlatformFailed),
+						Timestamp:   time.Now(),
+					})
 				}
 			}
-			s.store.UpdateExecution(execution)
+		} else {
+			// Handle single-arch manifest
+			blobs := repoTag.manifest.GetAllBlobs()
 
-			// Broadcast progress
-			s.hub.BroadcastProgress(execution.ID, map[string]interface{}{
-				"total_blobs":  execution.TotalBlobs,
-				"synced_blobs": execution.SyncedBlobs,
-				"progress":     execution.Progress(),
+			s.store.CreateExecutionLog(&models.ExecutionLog{
+				ExecutionID: execution.ID,
+				Level:       models.LogLevelInfo,
+				Message:     fmt.Sprintf("tag %s 有 %d 个 blob", repoTag.tag, len(blobs)),
+				Timestamp:   time.Now(),
 			})
+
+			// Sync blobs
+			for _, blob := range blobs {
+				// Check if exists
+				exists, _, err := targetClient.BlobExists(ctx, repoTag.targetRepo, blob.Digest)
+				if err != nil {
+					s.store.CreateExecutionLog(&models.ExecutionLog{
+						ExecutionID: execution.ID,
+						Level:       models.LogLevelError,
+						Message:     fmt.Sprintf("检查 blob 失败 (%s): %v", blob.Digest[:12], err),
+						Timestamp:   time.Now(),
+					})
+					execution.FailedBlobs++
+					tagFailedBlobs++
+					continue
+				}
+
+				if exists {
+					execution.SkippedBlobs++
+					execution.SyncedBlobs++
+				} else {
+					// Copy blob
+					err = registry.CopyBlob(ctx, sourceClient, targetClient, repoTag.sourceRepo, repoTag.targetRepo, blob.Digest, blob.Size)
+					if err != nil {
+						s.store.CreateExecutionLog(&models.ExecutionLog{
+							ExecutionID: execution.ID,
+							Level:       models.LogLevelError,
+							Message:     fmt.Sprintf("复制 blob 失败 (%s): %v", blob.Digest[:12], err),
+							Timestamp:   time.Now(),
+						})
+						execution.FailedBlobs++
+						tagFailedBlobs++
+					} else {
+						execution.SyncedBlobs++
+						execution.SyncedSize += blob.Size
+					}
+				}
+				s.store.UpdateExecution(execution)
+
+				// Broadcast progress
+				s.hub.BroadcastProgress(execution.ID, map[string]interface{}{
+					"total_blobs":  execution.TotalBlobs,
+					"synced_blobs": execution.SyncedBlobs,
+					"progress":     execution.Progress(),
+				})
+			}
+		}
+
+		// Only upload manifest if all blobs succeeded
+		if tagFailedBlobs > 0 {
+			s.store.CreateExecutionLog(&models.ExecutionLog{
+				ExecutionID: execution.ID,
+				Level:       models.LogLevelError,
+				Message:     fmt.Sprintf("tag %s 有 %d 个 blob 失败，跳过 manifest 上传", repoTag.tag, tagFailedBlobs),
+				Timestamp:   time.Now(),
+			})
+			continue
 		}
 
 		// Upload manifest

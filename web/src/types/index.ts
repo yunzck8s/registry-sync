@@ -90,6 +90,7 @@ export interface Stats {
   running_executions: number;
   success_executions: number;
   failed_executions: number;
+  total_registries: number;
 }
 
 // WebSocket 消息类型

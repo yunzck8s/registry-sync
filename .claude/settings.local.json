@@ -12,7 +12,19 @@
       "Bash(lsof:*)",
       "Bash(sqlite3:*)",
       "Bash(md5sum:*)",
-      "Bash(timeout 3 ./registry-sync server:*)"
+      "Bash(timeout 3 ./registry-sync server:*)",
+      "Bash(go list:*)",
+      "Bash(go version:*)",
+      "Bash(docker build:*)",
+      "Bash(sudo docker build:*)",
+      "Bash(sudo -S docker build:*)",
+      "Bash(sudo -S docker run:*)",
+      "Bash(sudo -S docker ps:*)",
+      "Bash(sudo -S docker logs:*)",
+      "Bash(sudo chown:*)",
+      "Bash(sudo -S chown:*)",
+      "Bash(sudo -S docker rm:*)",
+      "Bash(sudo -S docker stop:*)"
     ],
     "deny": [],
     "ask": []

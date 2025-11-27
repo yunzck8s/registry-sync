@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Table, Button, Space, Tag, Switch, Popconfirm, Modal, Form, Input, Select, InputNumber, Checkbox, Card, Alert } from 'antd';
-import { PlayCircleOutlined, StopOutlined, EditOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, FilterOutlined } from '@ant-design/icons';
+import { PlayCircleOutlined, StopOutlined, EditOutlined, DeleteOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useApi, useAsyncAction } from '../hooks/useApi';
 import { taskApi, registryApi, notificationApi } from '../api/client';
 import type { SyncTask } from '../types';
@@ -25,9 +25,9 @@ const Tasks: React.FC = () => {
 
   // 目标配置状态
   const [targetProjects, setTargetProjects] = useState<string[]>([]);
-  const [targetRepos, setTargetRepos] = useState<string[]>([]);
+  const [_targetRepos, setTargetRepos] = useState<string[]>([]);
   const [targetProjectsLoading, setTargetProjectsLoading] = useState(false);
-  const [targetReposLoading, setTargetReposLoading] = useState(false);
+  const [_targetReposLoading, setTargetReposLoading] = useState(false);
 
   const handleCreate = () => {
     setEditingTask(null);
@@ -420,7 +420,7 @@ const Tasks: React.FC = () => {
                 loading={sourceProjectsLoading}
                 optionFilterProp="children"
                 filterOption={(input, option) =>
-                  (option?.children as string).toLowerCase().includes(input.toLowerCase())
+                  String(option?.children || '').toLowerCase().includes(input.toLowerCase())
                 }
                 virtual={true}
                 onChange={(value) => {
@@ -465,7 +465,7 @@ const Tasks: React.FC = () => {
                   allowClear
                   optionFilterProp="children"
                   filterOption={(input, option) =>
-                    (option?.children as string).toLowerCase().includes(input.toLowerCase())
+                    String(option?.children || '').toLowerCase().includes(input.toLowerCase())
                   }
                   virtual={true}
                 >
@@ -514,7 +514,7 @@ const Tasks: React.FC = () => {
                 loading={targetProjectsLoading}
                 optionFilterProp="children"
                 filterOption={(input, option) =>
-                  (option?.children as string).toLowerCase().includes(input.toLowerCase())
+                  String(option?.children || '').toLowerCase().includes(input.toLowerCase())
                 }
                 virtual={true}
                 onChange={(value) => {
