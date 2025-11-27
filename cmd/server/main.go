@@ -158,15 +158,25 @@ func main() {
 	}
 
 	// Serve static files (for frontend)
-	router.Static("/assets", "./web/build/assets")
+	router.StaticFS("/assets", http.Dir("./web/build/assets"))
+	router.StaticFile("/favicon.ico", "./web/build/favicon.ico")
+
+	// Serve index.html for root path
+	router.GET("/", func(c *gin.Context) {
+		c.File("./web/build/index.html")
+	})
 
 	// Serve index.html for all non-API routes (SPA fallback)
 	router.NoRoute(func(c *gin.Context) {
-		// Don't serve index.html for API requests
-		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
-			c.JSON(404, gin.H{"error": "Not found"})
+		path := c.Request.URL.Path
+
+		// Don't serve index.html for API or assets requests
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/assets/") {
+			c.Status(404)
 			return
 		}
+
+		// Serve index.html for client-side routing
 		c.File("./web/build/index.html")
 	})
 
