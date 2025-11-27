@@ -1,9 +1,22 @@
 import React, { useState, useMemo } from 'react';
-import { Table, Button, Space, Tag, Switch, Popconfirm, Modal, Form, Input, Select, InputNumber, Checkbox, Card, Alert } from 'antd';
+import { Table, Button, Space, Tag, Switch, Popconfirm, Modal, Form, Input, Select, InputNumber, Checkbox, Card, Alert, Radio } from 'antd';
 import { PlayCircleOutlined, StopOutlined, EditOutlined, DeleteOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useApi, useAsyncAction } from '../hooks/useApi';
 import { taskApi, registryApi, notificationApi } from '../api/client';
 import type { SyncTask } from '../types';
+
+// Cron 表达式预设
+const CRON_PRESETS = [
+  { label: '不启用定时任务', value: '', description: '手动执行' },
+  { label: '每小时执行', value: '0 * * * *', description: '每小时的整点执行' },
+  { label: '每天凌晨2点', value: '0 2 * * *', description: '每天凌晨2点执行' },
+  { label: '每天中午12点', value: '0 12 * * *', description: '每天中午12点执行' },
+  { label: '每周一凌晨2点', value: '0 2 * * 1', description: '每周一凌晨2点执行' },
+  { label: '每月1号凌晨2点', value: '0 2 1 * *', description: '每月1号凌晨2点执行' },
+  { label: '每6小时执行', value: '0 */6 * * *', description: '每6小时执行一次' },
+  { label: '每12小时执行', value: '0 */12 * * *', description: '每12小时执行一次' },
+  { label: '自定义', value: 'custom', description: '手动输入 Cron 表达式' },
+];
 
 const Tasks: React.FC = () => {
   const { data: tasks, loading, refetch } = useApi(() => taskApi.list(), []);
@@ -14,6 +27,7 @@ const Tasks: React.FC = () => {
   const [editingTask, setEditingTask] = useState<SyncTask | null>(null);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [cronPreset, setCronPreset] = useState<string>('');
   const [form] = Form.useForm();
 
   // 源配置状态
@@ -37,6 +51,7 @@ const Tasks: React.FC = () => {
     setTargetProjects([]);
     setTargetRepos([]);
     setSyncAllSourceRepos(false);
+    setCronPreset('');
     setModalVisible(true);
   };
 
@@ -52,6 +67,11 @@ const Tasks: React.FC = () => {
         console.error('Failed to parse notification_channel_ids:', e);
       }
     }
+
+    // Determine cron preset
+    const cronExpr = record.cron_expression || '';
+    const preset = CRON_PRESETS.find(p => p.value === cronExpr && p.value !== 'custom');
+    setCronPreset(preset ? cronExpr : (cronExpr ? 'custom' : ''));
 
     form.setFieldsValue({
       ...record,
@@ -264,10 +284,18 @@ const Tasks: React.FC = () => {
       ),
     },
     {
-      title: 'Cron',
+      title: '定时任务',
       dataIndex: 'cron_expression',
       key: 'cron_expression',
-      render: (cron: string) => cron || '-',
+      render: (cron: string) => {
+        if (!cron) return '-';
+        const preset = CRON_PRESETS.find(p => p.value === cron);
+        return (
+          <span title={cron}>
+            {preset ? preset.label : cron}
+          </span>
+        );
+      },
     },
     {
       title: '启用',
@@ -563,9 +591,50 @@ const Tasks: React.FC = () => {
             </Select>
           </Form.Item>
 
-          <Form.Item name="cron_expression" label="Cron 表达式（定时任务）">
-            <Input placeholder='例如: 0 2 * * * (每天凌晨2点)' />
+          <Form.Item label="定时任务设置">
+            <Radio.Group
+              value={cronPreset}
+              onChange={(e) => {
+                const value = e.target.value;
+                setCronPreset(value);
+                if (value !== 'custom') {
+                  form.setFieldsValue({ cron_expression: value });
+                }
+              }}
+              style={{ width: '100%' }}
+            >
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {CRON_PRESETS.map((preset) => (
+                  <Radio key={preset.value} value={preset.value}>
+                    <span style={{ fontWeight: 500 }}>{preset.label}</span>
+                    {preset.value && preset.value !== 'custom' && (
+                      <span style={{ color: '#666', marginLeft: 8, fontSize: '12px' }}>
+                        ({preset.value} - {preset.description})
+                      </span>
+                    )}
+                    {!preset.value && preset.value !== 'custom' && (
+                      <span style={{ color: '#666', marginLeft: 8, fontSize: '12px' }}>
+                        - {preset.description}
+                      </span>
+                    )}
+                  </Radio>
+                ))}
+              </Space>
+            </Radio.Group>
           </Form.Item>
+
+          {cronPreset === 'custom' && (
+            <Form.Item
+              name="cron_expression"
+              label="自定义 Cron 表达式"
+              rules={[{ required: true, message: '请输入 Cron 表达式' }]}
+              extra="格式: 分 时 日 月 星期 (例如: 0 2 * * * 表示每天凌晨2点)"
+            >
+              <Input placeholder="输入自定义 Cron 表达式" />
+            </Form.Item>
+          )}
+
+          {!cronPreset && <Form.Item name="cron_expression" hidden><Input /></Form.Item>}
 
           <div style={{ border: '1px solid #d9d9d9', borderRadius: 4, padding: 16, marginBottom: 16 }}>
             <h3 style={{ marginTop: 0 }}>通知配置</h3>

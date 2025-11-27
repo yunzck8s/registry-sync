@@ -37,7 +37,8 @@ RUN go mod download
 COPY . .
 
 # Build backend (CGO_ENABLED=1 for SQLite support)
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+# Note: GOOS and GOARCH are automatically set by the build platform
+RUN CGO_ENABLED=1 go build \
     -ldflags="-w -s" \
     -o registry-sync-server \
     ./cmd/server
