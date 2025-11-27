@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: registry-sync
+  labels:
+    app: registry-sync

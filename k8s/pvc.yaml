@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-sync-data
+  namespace: registry-sync
+  labels:
+    app: registry-sync
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # Uncomment and modify if you have a specific storage class
+  # storageClassName: your-storage-class

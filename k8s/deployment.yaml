@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry-sync
+  namespace: registry-sync
+  labels:
+    app: registry-sync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: registry-sync
+  template:
+    metadata:
+      labels:
+        app: registry-sync
+    spec:
+      containers:
+      - name: registry-sync
+        image: zunshen/registry-sync:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: TZ
+          value: "Asia/Shanghai"
+        - name: GIN_MODE
+          value: "release"
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: registry-sync-data
+      restartPolicy: Always

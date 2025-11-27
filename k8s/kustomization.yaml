@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: registry-sync
+
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  # Uncomment if you want to use ingress
+  # - ingress.yaml
+
+# Add common labels to all resources
+commonLabels:
+  app: registry-sync
+  version: v1
