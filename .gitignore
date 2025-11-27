@@ -1,0 +1,43 @@
+# Binaries
+registry-sync
+registry-sync-server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Configuration files (don't commit passwords)
+configs/sync.yaml
+!configs/sync.example.yaml
+
+# Logs
+*.log
+
+# Build artifacts
+dist/
+build/
+
+# Database
+*.db
+*.db-journal

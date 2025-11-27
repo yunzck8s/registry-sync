@@ -1,0 +1,114 @@
+version: "1.0"
+
+# 全局设置
+global:
+  concurrency: 5          # 并发传输 Blob 的数量
+  retry:
+    max_attempts: 5       # 失败操作的最大重试次数
+    initial_interval: 1s  # 初始重试间隔
+    max_interval: 30s     # 最大重试间隔
+  timeout: 10m            # 每个镜像同步的超时时间
+
+# Registry 定义
+registries:
+  # Docker Hub
+  dockerhub:
+    url: https://registry-1.docker.io
+    username: ${DOCKERHUB_USER}
+    password: ${DOCKERHUB_PASSWORD}
+    insecure: false
+
+  # Harbor（自建）
+  harbor-prod:
+    url: https://harbor.example.com
+    username: admin
+    password: ${HARBOR_PASSWORD}
+    insecure: false
+    ratelimit:
+      qps: 50
+
+  # 阿里云容器镜像服务
+  aliyun-acr:
+    url: https://registry.cn-hangzhou.aliyuncs.com
+    username: ${ALIYUN_USER}
+    password: ${ALIYUN_PASSWORD}
+    insecure: false
+    ratelimit:
+      qps: 20
+
+# 同步规则
+sync_rules:
+  # 示例 1：同步 nginx 1.2x 版本到 Harbor
+  - name: "nginx-to-harbor"
+    source:
+      registry: dockerhub
+      repository: library/nginx
+    target:
+      registry: harbor-prod
+      repository: prod/nginx
+    tags:
+      include:
+        - "^1\\.2[0-9]\\.[0-9]+$"  # 匹配 1.2x.x 版本
+      exclude:
+        - ".*-alpine"               # 排除 alpine 变体
+        - ".*-perl"                 # 排除 perl 变体
+      latest: 10                    # 只保留最新的 10 个匹配标签
+    architectures:
+      - amd64
+      - arm64
+    enabled: true
+
+  # 示例 2：同步最新的 Redis 到阿里云
+  - name: "redis-latest"
+    source:
+      registry: dockerhub
+      repository: library/redis
+    target:
+      registry: aliyun-acr
+      repository: cache/redis
+    tags:
+      include:
+        - "latest"
+        - "^7\\.[0-9]+\\.[0-9]+$"  # Redis 7.x 版本
+    architectures:
+      - amd64
+    enabled: true
+
+  # 示例 3：同步 Node.js Alpine 镜像
+  - name: "node-alpine"
+    source:
+      registry: dockerhub
+      repository: library/node
+    target:
+      registry: aliyun-acr
+      repository: runtime/node
+    tags:
+      include:
+        - "^20\\.[0-9]+\\.[0-9]+-alpine$"  # Node 20.x alpine 版本
+      exclude:
+        - ".*-slim"
+    architectures:
+      - amd64
+      - arm64
+    enabled: false  # 暂时禁用
+
+  # 示例 4：只同步稳定版本（排除 dev/alpha/beta）
+  - name: "stable-only"
+    source:
+      registry: dockerhub
+      repository: library/postgres
+    target:
+      registry: harbor-prod
+      repository: db/postgres
+    tags:
+      include:
+        - "^[0-9]+\\.[0-9]+\\.[0-9]+$"  # 只匹配 x.y.z 格式的版本
+      exclude:
+        - ".*-alpha"
+        - ".*-beta"
+        - ".*-rc"
+        - ".*-SNAPSHOT"
+      latest: 5
+    architectures:
+      - amd64
+    enabled: true
